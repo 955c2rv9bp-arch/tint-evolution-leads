@@ -1677,15 +1677,47 @@ async function openUsersModal(){
         <div class="user-name">${esc(u.username)}</div>
         <span class="user-role-badge role-${u.role}">${u.role}</span>
         ${u.active==='false'?'<span class="inactive-chip">Inactive</span>':''}
-        <div style="display:flex;gap:6px;margin-left:auto">
+        <div style="display:flex;gap:6px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end">
           ${u.id!==S.user.id?`
           <button class="btn btn-ghost btn-xs" onclick="toggleUserActive('${u.id}','${u.active}')">${u.active==='false'?'Activate':'Deactivate'}</button>
-          <button class="btn btn-ghost btn-xs" onclick="resetUserPw('${u.id}','${esc(u.username)}')">Reset PW</button>`:'<span style="font-size:11px;color:var(--muted)">(you)</span>'}
+          <button class="btn btn-ghost btn-xs" onclick="resetUserPw('${u.id}','${esc(u.username)}')">Reset PW</button>
+          <button class="btn btn-ghost btn-xs" onclick="sendWelcomeExisting('${esc(u.username)}')">📧 Welcome</button>
+          <button class="btn btn-danger btn-xs" onclick="deleteUser('${u.id}','${esc(u.username)}')">🗑</button>`:'<span style="font-size:11px;color:var(--muted)">(you)</span>'}
         </div>
       </div>`).join('');
   }catch(e){ document.getElementById('usersList').innerHTML=`<div style="color:var(--red);font-size:12px">${e.message}</div>`; }
 }
 function closeUsersModal(){ hide('usersModal'); }
+
+async function sendWelcomeExisting(username){
+  const email = prompt(`Enter ${username}'s email address:`);
+  if(!email) return;
+  const pw = prompt(`Enter a password to set for ${username} (they'll receive this in the email):`);
+  if(!pw) return;
+  const appUrl = prompt('Enter the app URL (your GitHub Pages link):') || 'Ask your admin for the app link';
+  try {
+    // Reset their password first
+    const users = await api('getUsers');
+    const u = users.users.find(x=>x.username===username);
+    if(u) await api('updateUser',{userId:u.id, newPassword:pw});
+    // Send welcome email
+    const res = await api('sendWelcome',{
+      toEmail:email, newUsername:username, newPassword:pw,
+      newRole: u?.role||'sales', appUrl, scriptUrl:S.scriptUrl
+    });
+    if(!res.success) throw new Error(res.error);
+    alert(`Welcome email sent to ${email} ✓`);
+  } catch(e){ alert('Error: '+e.message); }
+}
+
+async function deleteUser(userId, username){
+  if(!confirm(`Delete user "${username}"? This cannot be undone.`)) return;
+  try {
+    const res = await api('deleteUser',{userId});
+    if(!res.success) throw new Error(res.error);
+    openUsersModal();
+  } catch(e){ alert('Error: '+e.message); }
+}
 
 async function submitAddUser(){
   const u=v('nu-user').trim(), p=v('nu-pass').trim(), r=v('nu-role');
