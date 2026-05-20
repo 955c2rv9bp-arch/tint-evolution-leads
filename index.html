@@ -520,6 +520,7 @@ tr:hover td{background:var(--surface2);}
   <div id="detailContent"></div>
   <div class="modal-footer">
     <button class="btn btn-danger btn-sm hidden" id="detailDeleteBtn">🗑 Delete</button>
+    <button class="btn btn-ghost btn-sm" onclick="quickLogVisit()">📍 Log Visit</button>
     <button class="btn btn-ghost btn-sm" onclick="openActivityModal()">📋 Activity Log</button>
     <button class="btn btn-ghost btn-sm" onclick="closeDetailModal()">Close</button>
     <button class="btn btn-primary btn-sm" id="detailEditBtn">✏ Edit</button>
@@ -648,6 +649,12 @@ tr:hover td{background:var(--surface2);}
     <div class="fgroup"><label>Username</label><input id="nu-user" placeholder="salesrep" autocomplete="off"></div>
     <div class="fgroup"><label>Password</label><input type="password" id="nu-pass" placeholder="Password" autocomplete="off"></div>
     <div class="fgroup"><label>Role</label><select id="nu-role"><option value="sales">Sales Rep</option><option value="admin">Admin</option></select></div>
+    <div class="fgroup full"><label>Their Email Address (for welcome email)</label><input type="email" id="nu-email" placeholder="salesrep@tintevolution.com" autocomplete="off"></div>
+    <div class="fgroup full"><label>App URL (link you share with them)</label><input type="url" id="nu-appurl" placeholder="https://yourusername.github.io/tint-evolution-leads" autocomplete="off"></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;margin:10px 0 4px">
+    <input type="checkbox" id="nu-sendmail" style="width:auto;accent-color:var(--red);cursor:pointer" checked>
+    <label for="nu-sendmail" style="font-size:12px;color:var(--muted);cursor:pointer;text-transform:none;letter-spacing:0">Send welcome email with login credentials &amp; setup instructions</label>
   </div>
   <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="submitAddUser()">+ Add User</button>
   <div class="auth-err" id="user-err"></div>
@@ -1247,13 +1254,17 @@ function openDetail(id){
       </div>
     </div>`).join('');
   document.getElementById('detailContent').innerHTML=`
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap">
       <div>
         <div style="font-size:20px;font-weight:800">${esc(l.dealer)}</div>
         ${l.dealerGroup?`<div style="color:var(--muted);font-size:12px;margin-top:2px">🏢 Group: ${esc(l.dealerGroup)}${l.numLocations?` · ${l.numLocations} location(s)`:''}</div>`:''}
-        ${l.address?`<div style="color:var(--muted);font-size:12px;margin-top:2px">📍 ${esc(l.address)}</div>`:''}
+        ${l.address?`<div style="font-size:12px;margin-top:2px">📍 <a href="https://www.google.com/maps/search/${encodeURIComponent(l.address)}" target="_blank" style="color:var(--blue)">${esc(l.address)}</a></div>`:''}
       </div>
       <span class="badge s-${l.status}" style="flex-shrink:0;font-size:11px;padding:4px 10px">${statusLbl(l.status)}</span>
+    </div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+      <span style="font-size:10px;color:var(--muted);align-self:center;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-right:2px">Move to:</span>
+      ${STAGES.map(st=>st.key===l.status?'':`<button class="btn btn-xs btn-ghost" style="border-color:var(--border2)" onclick="quickStatus('${id}','${st.key}')">${statusLbl(st.key)}</button>`).join('')}
     </div>
     ${l.cardPhoto?`<div style="margin-bottom:14px"><img src="${l.cardPhoto}" style="max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);object-fit:contain" alt="Business card"></div>`:''}
     <div class="dsec">
@@ -1298,6 +1309,32 @@ function openDetail(id){
   show('detailModal');
 }
 function closeDetailModal(){ hide('detailModal'); }
+
+async function quickStatus(id, newStatus){
+  const l=S.leads.find(x=>x.id===id); if(!l) return;
+  try {
+    const res=await api('updateLead',{...l, contacts: Array.isArray(l.contacts)?l.contacts:[], id, status:newStatus});
+    if(!res.success) throw new Error(res.error);
+    l.status=newStatus;
+    openDetail(id); // re-render detail with new status
+    renderAll();
+  } catch(e){ alert('Could not update status: '+e.message); }
+}
+
+async function quickLogVisit(){
+  const l=S.leads.find(x=>x.id===S.detailId); if(!l) return;
+  const notes=prompt(`Log a visit to ${l.dealer} today — add a quick note (optional):`);
+  if(notes===null) return; // cancelled
+  try {
+    await api('addActivity',{leadId:l.id, date:todayStr(), type:'Site Visit', notes:notes||'Visited dealership', by:S.user.username});
+    // Also update the visit date on the lead
+    await api('updateLead',{...l, contacts:Array.isArray(l.contacts)?l.contacts:[], visitDate:todayStr(), visitedBy:S.user.username});
+    l.visitDate=todayStr(); l.visitedBy=S.user.username;
+    openDetail(l.id);
+    renderAll();
+    alert('Visit logged ✓');
+  } catch(e){ alert('Error: '+e.message); }
+}
 
 // ══════════════════════════════════════════════════════════════
 //  ACTIVITY LOG
@@ -1652,12 +1689,27 @@ function closeUsersModal(){ hide('usersModal'); }
 
 async function submitAddUser(){
   const u=v('nu-user').trim(), p=v('nu-pass').trim(), r=v('nu-role');
+  const email=v('nu-email').trim(), appUrl=v('nu-appurl').trim();
+  const sendMail=document.getElementById('nu-sendmail').checked;
   const err=document.getElementById('user-err'); err.style.display='none';
   if(!u||!p){ showErr(err,'Username and password required.'); return; }
   try{
-    const res=await api('addUser',{newUsername:u,newPassword:p,newRole:r});
+    const res=await api('addUser',{newUsername:u, newPassword:p, newRole:r});
     if(!res.success) throw new Error(res.error);
-    document.getElementById('nu-user').value=''; document.getElementById('nu-pass').value='';
+    // Send welcome email if requested and email provided
+    if(sendMail && email){
+      await api('sendWelcome',{
+        toEmail: email,
+        newUsername: u,
+        newPassword: p,
+        newRole: r,
+        appUrl: appUrl || 'Ask your admin for the app link',
+        scriptUrl: S.scriptUrl,
+      });
+    }
+    document.getElementById('nu-user').value='';
+    document.getElementById('nu-pass').value='';
+    document.getElementById('nu-email').value='';
     openUsersModal();
   }catch(e){ showErr(err,e.message); }
 }
@@ -1725,7 +1777,15 @@ function switchView(v){
 // ══════════════════════════════════════════════════════════════
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function v(id){const el=document.getElementById(id);return el?el.value:'';}
-function fmtD(d){if(!d)return'';const[y,m,day]=d.split('-');return`${+m}/${+day}/${y}`;}
+function fmtD(d){
+  if(!d)return'';
+  // Clean YYYY-MM-DD format
+  if(/^\d{4}-\d{2}-\d{2}/.test(d)){const[y,m,day]=d.split('-');return`${+m}/${+day}/${y}`;}
+  // Google Sheets sometimes returns a full date string — parse it
+  const dt=new Date(d);
+  if(!isNaN(dt.getTime()))return`${dt.getMonth()+1}/${dt.getDate()}/${dt.getFullYear()}`;
+  return d;
+}
 function todayStr(){return new Date().toISOString().slice(0,10);}
 function addDays(ds,n){const dt=new Date(ds);dt.setDate(dt.getDate()+n);return dt.toISOString().slice(0,10);}
 function cap(s){return s?s.charAt(0).toUpperCase()+s.slice(1):'';}
