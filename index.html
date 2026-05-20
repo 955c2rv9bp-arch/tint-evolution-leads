@@ -174,10 +174,10 @@ tr:hover td{background:var(--surface2);}
 .camera-area{background:var(--surface2);border:2px dashed var(--border2);border-radius:10px;min-height:210px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
 .dz{background:var(--surface2);border:2px dashed var(--border2);border-radius:10px;padding:36px 20px;text-align:center;cursor:pointer;transition:all .2s;}
 .dz:hover,.dz.over{border-color:var(--red);background:rgba(229,34,34,.04);}
-.ocr-prog{background:var(--surface2);border-radius:8px;padding:16px;text-align:center;display:none;margin-top:12px;}
+.ocr-prog{background:var(--surface2);border-radius:8px;padding:16px;text-align:center;margin-top:12px;}
 .ocr-spin{font-size:20px;animation:spin 1s linear infinite;display:inline-block;}
 @keyframes spin{to{transform:rotate(360deg);}}
-.er-box{margin-top:14px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:15px;display:none;}
+.er-box{margin-top:14px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:15px;}
 .er-title{font-size:10px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.6px;margin-bottom:11px;}
 .scan-tabs{display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid var(--border);}
 .stab{padding:8px 16px;cursor:pointer;color:var(--muted);font-weight:600;font-size:12px;border-bottom:2px solid transparent;transition:all .2s;}
@@ -607,7 +607,7 @@ tr:hover td{background:var(--surface2);}
   </div>
 
   <!-- OCR PROGRESS -->
-  <div class="ocr-prog" id="ocrProg">
+  <div class="ocr-prog hidden" id="ocrProg">
     <div class="ocr-spin">⚙️</div>
     <div style="color:var(--muted);font-size:12px;margin-top:6px" id="ocrMsg">Reading card…</div>
     <div style="margin-top:9px;background:var(--border);border-radius:4px;height:3px;overflow:hidden">
@@ -617,7 +617,7 @@ tr:hover td{background:var(--surface2);}
   <div id="ocrError" style="display:none;background:rgba(229,34,34,.1);border:1px solid rgba(229,34,34,.3);color:var(--red);border-radius:6px;padding:10px 12px;font-size:12px;margin-top:10px"></div>
 
   <!-- RESULTS -->
-  <div class="er-box" id="erBox">
+  <div class="er-box hidden" id="erBox">
     <div class="er-title">✅ Extracted — Review &amp; Edit Before Applying</div>
     <div class="fg">
       <div class="fgroup full"><label>Dealership / Company</label><input id="er-dealer"></div>
