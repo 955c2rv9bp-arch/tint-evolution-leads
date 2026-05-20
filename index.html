@@ -1188,10 +1188,13 @@ function removeContact(btn){
 }
 
 function switchFTab(tab){
-  document.querySelectorAll('.ftab').forEach((t,i)=>t.classList.toggle('active',['dealership','visit','notes'][i]===tab));
-  document.querySelectorAll('.ftab-content').forEach((c,i)=>{c.classList.toggle('active',['dealership','visit','notes'][i]===tab);c.style.display=['dealership','visit','notes'][i]===tab?'block':'none';});
-  // reset to class-based after first set
-  document.querySelectorAll('.ftab-content').forEach(c=>{c.style.display='';});
+  const order=['dealership','visit','notes'];
+  document.querySelectorAll('.ftab').forEach((t,i)=>t.classList.toggle('active',order[i]===tab));
+  document.querySelectorAll('.ftab-content').forEach((c,i)=>{
+    const active=order[i]===tab;
+    c.classList.toggle('active',active);
+    c.classList.toggle('hidden',!active);
+  });
 }
 
 function calcValue(){
