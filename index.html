@@ -273,8 +273,10 @@ tr:hover td{background:var(--surface2);}
 
   /* Modal: full screen on mobile */
   .overlay{padding:0;align-items:flex-end;}
-  .modal{border-radius:16px 16px 0 0;max-width:100%!important;padding:20px 16px;max-height:92vh;overflow-y:auto;}
+  .modal{border-radius:16px 16px 0 0;max-width:100%!important;padding:20px 16px 0 16px;max-height:92vh;overflow-y:auto;display:flex;flex-direction:column;}
   .modal-close{top:12px;right:12px;}
+  /* Pin save/action buttons to the bottom so they never scroll away */
+  .modal-footer{position:sticky;bottom:0;background:var(--surface);margin:0 -16px;padding:12px 16px 20px;border-top:1px solid var(--border);z-index:2;}
 
   /* Auth card on mobile */
   .auth-card{padding:24px 18px;}
@@ -572,7 +574,7 @@ tr:hover td{background:var(--surface2);}
         <video id="vid" autoplay playsinline muted style="width:100%;max-height:280px;border-radius:8px;display:block;object-fit:cover"></video>
         <!-- Card guide overlay -->
         <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
-          <div style="width:82%;aspect-ratio:1.75;border:2px solid rgba(229,34,34,.8);border-radius:6px;box-shadow:0 0 0 1000px rgba(0,0,0,.35)"></div>
+          <div style="width:87%;aspect-ratio:1.75;border:2px solid rgba(229,34,34,.8);border-radius:6px;box-shadow:0 0 0 1000px rgba(0,0,0,.35)"></div>
         </div>
         <div style="position:absolute;bottom:8px;left:0;right:0;text-align:center;font-size:11px;color:rgba(255,255,255,.8)">Fit card inside the box</div>
       </div>
@@ -1465,7 +1467,7 @@ function capturePhoto(){
     let scale,ox,oy;
     if(vidAspect>dispAspect){ scale=vidH/dispH; ox=(vidW-dispW*scale)/2; oy=0; }
     else { scale=vidW/dispW; ox=0; oy=(vidH-dispH*scale)/2; }
-    const bDispW=0.82*dispW, bDispH=bDispW/1.75;
+    const bDispW=0.87*dispW, bDispH=bDispW/1.75;
     const bDispX=(dispW-bDispW)/2, bDispY=(dispH-bDispH)/2;
     const bVidX=Math.max(0,bDispX*scale+ox), bVidY=Math.max(0,bDispY*scale+oy);
     const bVidW=Math.min(bDispW*scale, vidW-bVidX), bVidH=Math.min(bDispH*scale, vidH-bVidY);
@@ -1599,20 +1601,22 @@ function parseCard(text){
   const lines=text.split('\n').map(l=>l.trim()).filter(l=>l.length>1);
 
   // ── Definite regex matches first ────────────────────────────────────────────
-  const emailM=text.match(/[\w.+\-]+@[\w\-]+\.[\w.]{2,}/);
+  // Collapse whitespace/newlines so split emails like "john@\ndomain.com" still match
+  const flatText=text.replace(/\s+/g,' ');
+  const emailM=flatText.match(/[\w.+\-]+@[\w\-]+\.[\w.]{2,}/);
   const email=emailM?emailM[0].toLowerCase():'';
 
   // Phone — try labeled (Direct/Cell/Mobile/Office) first, then bare number
-  const labeledPhM=text.match(/(?:direct|cell|mobile|office|tel|ph|fax|c\b|o\b|d\b)[:\.\s]+(\+?1?[\s.\-]?(?:\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}))/i);
-  const barePhM=text.match(/(?<![a-z@\d])(\+?1[\s.\-]?)?(\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4})/i);
+  const labeledPhM=flatText.match(/(?:direct|cell|mobile|office|tel|ph|fax|c\b|o\b|d\b)[:\.\s]+(\+?1?[\s.\-]?(?:\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}))/i);
+  const barePhM=flatText.match(/(?<![a-z@\d])(\+?1[\s.\-]?)?(\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4})/i);
   const phone=labeledPhM?labeledPhM[1].trim():(barePhM?barePhM[0].trim():'');
 
   // Website
   let website='';
-  const urlM=text.match(/(https?:\/\/|www\.)[^\s,\n<>]+/i);
+  const urlM=flatText.match(/(https?:\/\/|www\.)[^\s,<>]+/i);
   if(urlM){ website=urlM[0].replace(/^https?:\/\//i,'').replace(/\/$/,''); }
   else{
-    const domM=text.match(/\b([\w\-]+)\.(com|net|org|co|io|auto|cars|dealer)\b/gi);
+    const domM=flatText.match(/\b([\w\-]+)\.(com|net|org|co|io|auto|cars|dealer)\b/gi);
     if(domM){ const nd=domM.filter(d=>!email.includes(d)); if(nd.length) website=nd[0]; }
   }
 
