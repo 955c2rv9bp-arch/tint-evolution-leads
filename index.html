@@ -661,6 +661,11 @@ tr:hover td{background:var(--surface2);}
  </div>
 </div>
 
+<!-- ═══ CARD PHOTO LIGHTBOX ═══ -->
+<div id="cardLightbox" class="hidden" onclick="hide('cardLightbox')" style="position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:zoom-out;padding:16px">
+  <img id="cardLightboxImg" style="max-width:100%;max-height:90vh;border-radius:8px;object-fit:contain;box-shadow:0 0 40px rgba(0,0,0,.8)" alt="Business card">
+</div>
+
 <!-- ═══ CONFIRM ═══ -->
 <div class="overlay hidden" id="confirmOverlay">
  <div class="modal" style="max-width:360px;text-align:center">
@@ -893,6 +898,18 @@ async function loadLeads() {
   }
 }
 
+function setBtnLoading(btn,loading){
+  if(!btn) return;
+  if(loading){
+    btn.disabled=true;
+    btn.dataset.orig=btn.innerHTML;
+    btn.innerHTML='<span class="ocr-spin" style="font-size:12px;vertical-align:middle">⚙️</span> Saving…';
+  } else {
+    btn.disabled=false;
+    btn.innerHTML=btn.dataset.orig||btn.innerHTML;
+  }
+}
+
 async function submitLead() {
   const dealer = v('f-dealer').trim();
   if(!dealer){ alert('Dealership name is required.'); switchFTab('dealership'); return; }
@@ -934,6 +951,8 @@ async function submitLead() {
     cardPhoto: S.cardPhoto || '',
   };
 
+  const btn=document.querySelector('#formModal .modal-footer .btn-primary');
+  setBtnLoading(btn,true);
   try {
     let res;
     if(S.editingId) { res = await api('updateLead',{id:S.editingId,...data}); }
@@ -941,7 +960,7 @@ async function submitLead() {
     if(!res.success) throw new Error(res.error);
     closeFormModal();
     await loadLeads();
-  } catch(e) { alert('Error saving lead: ' + e.message); }
+  } catch(e) { setBtnLoading(btn,false); alert('Error saving lead: ' + e.message); }
 }
 
 async function deleteLead(id) {
@@ -1266,7 +1285,10 @@ function openDetail(id){
       <span style="font-size:10px;color:var(--muted);align-self:center;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-right:2px">Move to:</span>
       ${STAGES.map(st=>st.key===l.status?'':`<button class="btn btn-xs btn-ghost" style="border-color:var(--border2)" onclick="quickStatus('${id}','${st.key}')">${statusLbl(st.key)}</button>`).join('')}
     </div>
-    ${l.cardPhoto?`<div style="margin-bottom:14px"><img src="${l.cardPhoto}" style="max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);object-fit:contain" alt="Business card"></div>`:''}
+    ${l.cardPhoto?`<div style="margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">📷 Business Card</div>
+      <img src="${l.cardPhoto}" onclick="showCardPhoto(this.src)" style="max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border);object-fit:contain;cursor:zoom-in" alt="Business card" title="Tap to view full size">
+    </div>`:''}
     <div class="dsec">
       <div class="dsec-title">Contacts</div>
       ${contactsHtml||'<span style="color:var(--muted);font-size:12px">No contacts recorded</span>'}
@@ -1371,11 +1393,14 @@ async function loadActivities(){
 
 async function submitActivity(){
   const notes=v('act-notes').trim(); if(!notes){alert('Enter activity notes.');return;}
+  const btn=document.querySelector('#activityModal .btn-primary');
+  setBtnLoading(btn,true);
   try {
     await api('addActivity',{leadId:S.activityLeadId,date:v('act-date'),type:v('act-type'),notes,by:S.user.username});
     document.getElementById('act-notes').value='';
+    setBtnLoading(btn,false);
     loadActivities();
-  } catch(e){ alert('Error: '+e.message); }
+  } catch(e){ setBtnLoading(btn,false); alert('Error: '+e.message); }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1428,9 +1453,25 @@ function stopCam(){
 function capturePhoto(){
   const vid=document.getElementById('vid');
   if(!vid.videoWidth||!vid.videoHeight){alert('Camera not ready yet — wait a moment and try again.');return;}
+
+  // Crop to the red guide box only (82% wide, 1.75 aspect ratio, centered)
+  const dispW=vid.offsetWidth, dispH=vid.offsetHeight;
+  const vidW=vid.videoWidth, vidH=vid.videoHeight;
+  // object-fit:cover scale + offsets
+  const dispAspect=dispW/dispH, vidAspect=vidW/vidH;
+  let scale,ox,oy;
+  if(vidAspect>dispAspect){ scale=vidH/dispH; ox=(vidW-dispW*scale)/2; oy=0; }
+  else { scale=vidW/dispW; ox=0; oy=(vidH-dispH*scale)/2; }
+  // Red box in display coords
+  const bDispW=0.82*dispW, bDispH=bDispW/1.75;
+  const bDispX=(dispW-bDispW)/2, bDispY=(dispH-bDispH)/2;
+  // Map to video coords
+  const bVidX=bDispX*scale+ox, bVidY=bDispY*scale+oy;
+  const bVidW=bDispW*scale, bVidH=bDispH*scale;
+
   const canvas=document.createElement('canvas');
-  canvas.width=vid.videoWidth; canvas.height=vid.videoHeight;
-  canvas.getContext('2d').drawImage(vid,0,0);
+  canvas.width=Math.round(bVidW); canvas.height=Math.round(bVidH);
+  canvas.getContext('2d').drawImage(vid,bVidX,bVidY,bVidW,bVidH,0,0,canvas.width,canvas.height);
   const dataUrl=canvas.toDataURL('image/jpeg',0.92);
   if(!dataUrl||dataUrl.length<200){alert('Could not capture image. Please try again.');return;}
   stopCam();
@@ -1516,6 +1557,7 @@ async function runOCR(src){
         }
       }
     });
+    await worker.setParameters({tessedit_pageseg_mode:'6'});
     const {data:{text}}=await worker.recognize(processed);
     await worker.terminate();
     document.getElementById('ocrBar').style.width='100%';
@@ -1543,31 +1585,40 @@ async function runOCR(src){
 function parseCard(text){
   const lines=text.split('\n').map(l=>l.trim()).filter(l=>l.length>1);
 
-  // Email
+  // ── Definite regex matches first ────────────────────────────────────────────
   const emailM=text.match(/[\w.+\-]+@[\w\-]+\.[\w.]{2,}/);
   const email=emailM?emailM[0].toLowerCase():'';
 
-  // Phone — many formats
-  const phoneM=text.match(/(\+?1[\s.\-]?)?(\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4})/);
-  const phone=phoneM?phoneM[0].trim():'';
+  // Phone — try labeled (Direct/Cell/Mobile/Office) first, then bare number
+  const labeledPhM=text.match(/(?:direct|cell|mobile|office|tel|ph|fax|c\b|o\b|d\b)[:\.\s]+(\+?1?[\s.\-]?(?:\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}))/i);
+  const barePhM=text.match(/(?<![a-z@\d])(\+?1[\s.\-]?)?(\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4})/i);
+  const phone=labeledPhM?labeledPhM[1].trim():(barePhM?barePhM[0].trim():'');
 
-  // Website — look for explicit URL first, then domain patterns
+  // Website
   let website='';
   const urlM=text.match(/(https?:\/\/|www\.)[^\s,\n<>]+/i);
   if(urlM){ website=urlM[0].replace(/^https?:\/\//i,'').replace(/\/$/,''); }
-  else {
-    // Look for domain patterns like "dealer.com" or "dealer.net" — but exclude email domains
+  else{
     const domM=text.match(/\b([\w\-]+)\.(com|net|org|co|io|auto|cars|dealer)\b/gi);
-    if(domM){
-      // Filter out anything that's part of an email address
-      const nonEmailDoms=domM.filter(d=>!email.includes(d));
-      if(nonEmailDoms.length) website=nonEmailDoms[0];
-    }
+    if(domM){ const nd=domM.filter(d=>!email.includes(d)); if(nd.length) website=nd[0]; }
   }
 
-  // Address
+  // ── Remove lines we've already consumed ─────────────────────────────────────
+  const skip=l=>{
+    if(l.includes('@')) return true;
+    if(/https?:\/\/|www\./i.test(l)) return true;
+    if(phone&&l.replace(/[\s.\-()+]/g,'').includes(phone.replace(/[\s.\-()+]/g,''))) return true;
+    return false;
+  };
+  const remaining=lines.filter(l=>!skip(l));
+
+  // ── Keywords ─────────────────────────────────────────────────────────────────
+  const titleKW=/\b(general\s+manager|gm|sales\s+(manager|director|rep|consultant)|finance\s+manager|fleet\s+manager|service\s+(manager|advisor|director)|used\s+car\s+manager|new\s+car\s+manager|internet\s+manager|business\s+manager|owner|president|vice\s+president|vp|director|ceo|coo|cfo|executive|manager|coordinator|specialist|consultant|advisor|representative|rep|partner|principal|agent)\b/i;
+  const compKW=/\b(llc|inc\.?|corp\.?|group|auto|motors|automotive|dealer|dealership|ford|chevrolet|chevy|toyota|honda|nissan|dodge|chrysler|jeep|subaru|hyundai|kia|mazda|bmw|audi|mercedes|benz|lexus|acura|infiniti|volvo|buick|cadillac|gmc|ram|volkswagen|vw|porsche|mitsubishi|genesis|lincoln|maserati)\b/i;
   const addrKW=/\b(st\.?|street|ave\.?|avenue|blvd\.?|boulevard|rd\.?|road|dr\.?|drive|way|ln\.?|lane|ct\.?|court|pl\.?|place|suite|ste\.?|floor|fl\.?|hwy|highway|pkwy|parkway)\b/i;
-  const addrLine=lines.find(l=>(/^\d+\s+\w/.test(l)||/suite|ste\s*\d/i.test(l))&&addrKW.test(l)&&l.length<90)||'';
+
+  // ── Address ──────────────────────────────────────────────────────────────────
+  const addrLine=remaining.find(l=>(/^\d{1,5}\s+[A-Za-z]/.test(l)||/suite|ste\s*\d/i.test(l))&&(addrKW.test(l)||/^\d+\s+\w+\s+\w/.test(l))&&l.length<90)||'';
   let cityState='';
   if(addrLine){
     const idx=lines.indexOf(addrLine);
@@ -1576,34 +1627,40 @@ function parseCard(text){
       if(/[A-Z]{2}[\s,]*\d{5}/.test(nx)||/,\s*[A-Z]{2}/.test(nx)) cityState=nx;
     }
   }
+  const rem2=remaining.filter(l=>l!==addrLine&&l!==cityState);
 
-  // Title
-  const titleKW=/\b(general\s+manager|gm|sales\s+(manager|director)|finance\s+manager|service\s+manager|owner|president|vice\s+president|vp|director|ceo|coo|cfo|executive|manager|coordinator|specialist|consultant|advisor|representative|rep|partner|principal)\b/i;
-  const titleLine=lines.find(l=>titleKW.test(l)&&l.length<65&&!/\d{3}/.test(l));
+  // ── Title ────────────────────────────────────────────────────────────────────
+  const titleLine=rem2.find(l=>titleKW.test(l)&&l.length<70&&!/^\d{3}/.test(l))||'';
 
-  // Company — look for automotive/business keywords
-  const compKW=/\b(llc|inc\.?|corp\.?|group|auto|motors|automotive|dealer|dealership|ford|chevrolet|chevy|toyota|honda|nissan|dodge|chrysler|jeep|subaru|hyundai|kia|mazda|bmw|audi|mercedes|lexus|acura|infiniti|volvo|buick|cadillac|gmc|ram)\b/i;
-  const compLine=lines.find(l=>compKW.test(l)&&!titleKW.test(l)&&!addrKW.test(l)&&l.length<72&&!/\d{3}[\s.\-]\d{3}/.test(l));
+  // ── Company ──────────────────────────────────────────────────────────────────
+  let compLine=rem2.find(l=>l!==titleLine&&compKW.test(l)&&l.length<80&&!/\d{3}[\s.\-]\d{3}/.test(l))||'';
 
-  // Name — look for 2+ capitalized words, no digits, not a title/company/address
-  // Also handle ALL CAPS names common on business cards
-  const nameLine=lines.find(l=>{
+  // ── Name — 2–4 title-case or ALL-CAPS words, no digits ──────────────────────
+  const isName=l=>{
     const words=l.split(/\s+/);
-    if(words.length<2||words.length>4) return false;
-    if(l.length>50||/\d/.test(l)) return false;
+    if(words.length<2||words.length>5) return false;
+    if(l.length>55||/\d/.test(l)) return false;
     if(titleKW.test(l)||compKW.test(l)||addrKW.test(l)) return false;
-    if(l.includes('@')||/www\.|\.com/i.test(l)) return false;
-    // Accept "John Smith" or "JOHN SMITH" patterns
-    return words.every(w=>/^[A-Z]/.test(w)||w===w.toUpperCase());
-  });
+    if(l.includes('@')||/www\.|\.com|\.net/i.test(l)) return false;
+    // Each word starts with capital OR entire line is all-caps
+    const allCaps=l===l.toUpperCase()&&l.length>3;
+    const titleCase=words.every(w=>/^[A-Z][a-z]/.test(w));
+    return allCaps||titleCase;
+  };
+  const nameLine=rem2.find(l=>l!==titleLine&&l!==compLine&&isName(l))||'';
+
+  // ── Fallback: if no company found, use first remaining non-name non-title line
+  if(!compLine){
+    compLine=rem2.find(l=>l!==nameLine&&l!==titleLine&&l.length>3&&l.length<80&&!/^\d{3}[\s.\-]\d/.test(l))||'';
+  }
 
   return {
-    dealer: compLine||'',
-    contact: nameLine||'',
-    title: titleLine||'',
+    dealer: compLine,
+    contact: nameLine,
+    title: titleLine,
     phone, email,
     website: website.replace(/[,;]+$/,''),
-    address: addrLine+(cityState?', '+cityState:''),
+    address: addrLine+(cityState?'\n'+cityState:''),
   };
 }
 
@@ -1611,16 +1668,22 @@ async function preprocessImg(src){
   return new Promise((resolve,reject)=>{
     const img=new Image();
     img.onload=()=>{
-      const scale=Math.min(1, 1400/img.width);
+      // Upscale small images — Tesseract reads much better at 1600px+
+      const TARGET=1600;
+      const scale=img.width<TARGET ? TARGET/img.width : Math.min(1,TARGET/img.width);
+      const w=Math.round(img.width*scale), h=Math.round(img.height*scale);
       const c=document.createElement('canvas');
-      c.width=img.width*scale; c.height=img.height*scale;
+      c.width=w; c.height=h;
       const ctx=c.getContext('2d');
-      ctx.drawImage(img,0,0,c.width,c.height);
-      const id=ctx.getImageData(0,0,c.width,c.height);
+      ctx.imageSmoothingEnabled=true;
+      ctx.imageSmoothingQuality='high';
+      ctx.drawImage(img,0,0,w,h);
+      const id=ctx.getImageData(0,0,w,h);
       const d=id.data;
+      // Grayscale + strong contrast boost
       for(let i=0;i<d.length;i+=4){
         const gray=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
-        const v=Math.max(0,Math.min(255,(gray-128)*1.6+128));
+        const v=Math.max(0,Math.min(255,(gray-128)*2.0+145));
         d[i]=d[i+1]=d[i+2]=v;
       }
       ctx.putImageData(id,0,0);
@@ -1826,6 +1889,12 @@ function statusLbl(s){return{'prospect':'Prospect','contacted':'Contacted','prop
 function show(id){const el=typeof id==='string'?document.getElementById(id):id;if(el)el.classList.remove('hidden');}
 function hide(id){const el=typeof id==='string'?document.getElementById(id):id;if(el)el.classList.add('hidden');}
 function showErr(el,msg){el.textContent=msg;el.style.display='block';}
+
+function showCardPhoto(src){
+  document.getElementById('cardLightboxImg').src=src;
+  document.getElementById('cardLightbox').classList.remove('hidden');
+  document.getElementById('cardLightbox').style.display='flex';
+}
 
 // Close overlays on backdrop click
 ['formModal','detailModal','activityModal','scannerModal','usersModal'].forEach(id=>{
