@@ -1454,25 +1454,38 @@ function capturePhoto(){
   const vid=document.getElementById('vid');
   if(!vid.videoWidth||!vid.videoHeight){alert('Camera not ready yet — wait a moment and try again.');return;}
 
-  // Crop to the red guide box only (82% wide, 1.75 aspect ratio, centered)
-  const dispW=vid.offsetWidth, dispH=vid.offsetHeight;
   const vidW=vid.videoWidth, vidH=vid.videoHeight;
-  // object-fit:cover scale + offsets
-  const dispAspect=dispW/dispH, vidAspect=vidW/vidH;
-  let scale,ox,oy;
-  if(vidAspect>dispAspect){ scale=vidH/dispH; ox=(vidW-dispW*scale)/2; oy=0; }
-  else { scale=vidW/dispW; ox=0; oy=(vidH-dispH*scale)/2; }
-  // Red box in display coords
-  const bDispW=0.82*dispW, bDispH=bDispW/1.75;
-  const bDispX=(dispW-bDispW)/2, bDispY=(dispH-bDispH)/2;
-  // Map to video coords
-  const bVidX=bDispX*scale+ox, bVidY=bDispY*scale+oy;
-  const bVidW=bDispW*scale, bVidH=bDispH*scale;
+  const dispW=vid.offsetWidth||vid.clientWidth||vidW;
+  const dispH=vid.offsetHeight||vid.clientHeight||vidH;
 
-  const canvas=document.createElement('canvas');
-  canvas.width=Math.round(bVidW); canvas.height=Math.round(bVidH);
-  canvas.getContext('2d').drawImage(vid,bVidX,bVidY,bVidW,bVidH,0,0,canvas.width,canvas.height);
-  const dataUrl=canvas.toDataURL('image/jpeg',0.92);
+  let dataUrl;
+  try{
+    // Crop to red guide box (82% wide, 1.75 aspect, centered), mapped back to raw video coords
+    const dispAspect=dispW/dispH, vidAspect=vidW/vidH;
+    let scale,ox,oy;
+    if(vidAspect>dispAspect){ scale=vidH/dispH; ox=(vidW-dispW*scale)/2; oy=0; }
+    else { scale=vidW/dispW; ox=0; oy=(vidH-dispH*scale)/2; }
+    const bDispW=0.82*dispW, bDispH=bDispW/1.75;
+    const bDispX=(dispW-bDispW)/2, bDispY=(dispH-bDispH)/2;
+    const bVidX=Math.max(0,bDispX*scale+ox), bVidY=Math.max(0,bDispY*scale+oy);
+    const bVidW=Math.min(bDispW*scale, vidW-bVidX), bVidH=Math.min(bDispH*scale, vidH-bVidY);
+
+    if(bVidW>50&&bVidH>30){
+      const c=document.createElement('canvas');
+      c.width=Math.round(bVidW); c.height=Math.round(bVidH);
+      c.getContext('2d').drawImage(vid,bVidX,bVidY,bVidW,bVidH,0,0,c.width,c.height);
+      dataUrl=c.toDataURL('image/jpeg',0.92);
+    }
+  } catch(e){ dataUrl=null; }
+
+  // Fallback: full frame if crop failed
+  if(!dataUrl||dataUrl.length<500){
+    const c=document.createElement('canvas');
+    c.width=vidW; c.height=vidH;
+    c.getContext('2d').drawImage(vid,0,0);
+    dataUrl=c.toDataURL('image/jpeg',0.92);
+  }
+
   if(!dataUrl||dataUrl.length<200){alert('Could not capture image. Please try again.');return;}
   stopCam();
   document.getElementById('camPreview').src=dataUrl;
@@ -1557,7 +1570,7 @@ async function runOCR(src){
         }
       }
     });
-    await worker.setParameters({tessedit_pageseg_mode:'6'});
+    await worker.setParameters({tessedit_pageseg_mode:'11'});
     const {data:{text}}=await worker.recognize(processed);
     await worker.terminate();
     document.getElementById('ocrBar').style.width='100%';
@@ -1680,10 +1693,10 @@ async function preprocessImg(src){
       ctx.drawImage(img,0,0,w,h);
       const id=ctx.getImageData(0,0,w,h);
       const d=id.data;
-      // Grayscale + strong contrast boost
+      // Grayscale + moderate contrast boost
       for(let i=0;i<d.length;i+=4){
         const gray=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
-        const v=Math.max(0,Math.min(255,(gray-128)*2.0+145));
+        const v=Math.max(0,Math.min(255,(gray-128)*1.5+128));
         d[i]=d[i+1]=d[i+2]=v;
       }
       ctx.putImageData(id,0,0);
